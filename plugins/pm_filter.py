@@ -83,12 +83,7 @@ async def pm_text(bot, message):
         reply_msg = await bot.send_message(message.from_user.id, f"<b><i>Searching For {content} 🔍</i></b>", reply_to_message_id=message.id)
         await auto_filter(bot, content, message, reply_msg, ai_search)
     
-@Client.on_callback_query(filters.regex(r"^reqmovie$"))
-async def request_movie_cb(client, query: CallbackQuery):
-    await query.answer()
-    user_id = query.from_user.id
-    mention = query.from_user.mention
-
+async def start_movie_request(client, user_id, mention):
     try:
         name_msg = await client.ask(
             user_id,
@@ -97,13 +92,6 @@ async def request_movie_cb(client, query: CallbackQuery):
             timeout=120
         )
     except Exception:
-        try:
-            await query.answer(
-                "Please start me in a private chat first, then tap this button again.",
-                show_alert=True
-            )
-        except Exception:
-            pass
         return
 
     movie_name = name_msg.text.strip()
@@ -2777,7 +2765,7 @@ async def auto_filter(client, name, msg, reply_msg, ai_search, spoll=False):
                 if settings["spell_check"]:
                     return await advantage_spell_chok(client, name, msg, reply_msg, ai_search)
                 else:
-                    req_btn = [[InlineKeyboardButton("🎬 Rᴇǫᴜᴇsᴛ Tʜɪs Mᴏᴠɪᴇ Tᴏ Aᴅᴍɪɴ", callback_data="reqmovie")]]
+                    req_btn = [[InlineKeyboardButton("🎬 Rᴇǫᴜᴇsᴛ Tʜɪs Mᴏᴠɪᴇ Tᴏ Aᴅᴍɪɴ", url=f"https://t.me/{temp.U_NAME}?start=reqmovie")]]
                     return await reply_msg.edit_text(f"**⚠️ No File Found For Your Query - {name}**\n**Make Sure Spelling Is Correct.**", reply_markup=InlineKeyboardMarkup(req_btn))
         else:
             return
@@ -2850,7 +2838,7 @@ async def auto_filter(client, name, msg, reply_msg, ai_search, spoll=False):
         [InlineKeyboardButton("⭐ Aᴅᴅ Tᴏ Wᴀᴛᴄʜʟɪsᴛ", callback_data=f"addwatch#{quote_plus(name)[:50]}")]
     )
     btn.append(
-        [InlineKeyboardButton("Dɪᴅɴ'ᴛ Gᴇᴛ Yᴏᴜʀ Sᴇᴀʀᴄʜᴇᴅ Mᴏᴠɪᴇs/Sᴇʀɪᴇs? Rᴇǫᴜᴇsᴛ Tᴏ Aᴅᴍɪɴ", callback_data="reqmovie")]
+        [InlineKeyboardButton("Dɪᴅɴ'ᴛ Gᴇᴛ Yᴏᴜʀ Sᴇᴀʀᴄʜᴇᴅ Mᴏᴠɪᴇs/Sᴇʀɪᴇs? Rᴇǫᴜᴇsᴛ Tᴏ Aᴅᴍɪɴ", url=f"https://t.me/{temp.U_NAME}?start=reqmovie")]
     )
     imdb = await get_poster(search, file=(files[0])['file_name']) if settings["imdb"] else None
     cur_time = datetime.now(pytz.timezone('Asia/Kolkata')).time()
@@ -2977,7 +2965,7 @@ async def advantage_spell_chok(client, name, msg, reply_msg, vj_search):
         button = [[
             InlineKeyboardButton("Gᴏᴏɢʟᴇ", url=f"https://www.google.com/search?q={reqst_gle}")
         ],[
-            InlineKeyboardButton("🎬 Rᴇǫᴜᴇsᴛ Tʜɪs Mᴏᴠɪᴇ Tᴏ Aᴅᴍɪɴ", callback_data="reqmovie")
+            InlineKeyboardButton("🎬 Rᴇǫᴜᴇsᴛ Tʜɪs Mᴏᴠɪᴇ Tᴏ Aᴅᴍɪɴ", url=f"https://t.me/{temp.U_NAME}?start=reqmovie")
         ]]
         if NO_RESULTS_MSG:
             await client.send_message(chat_id=LOG_CHANNEL, text=(script.NORSLTS.format(reqstr.id, reqstr.mention, mv_rqst)))
@@ -2991,7 +2979,7 @@ async def advantage_spell_chok(client, name, msg, reply_msg, vj_search):
         button = [[
             InlineKeyboardButton("Gᴏᴏɢʟᴇ", url=f"https://www.google.com/search?q={reqst_gle}")
         ],[
-            InlineKeyboardButton("🎬 Rᴇǫᴜᴇsᴛ Tʜɪs Mᴏᴠɪᴇ Tᴏ Aᴅᴍɪɴ", callback_data="reqmovie")
+            InlineKeyboardButton("🎬 Rᴇǫᴜᴇsᴛ Tʜɪs Mᴏᴠɪᴇ Tᴏ Aᴅᴍɪɴ", url=f"https://t.me/{temp.U_NAME}?start=reqmovie")
         ]]
         if NO_RESULTS_MSG:
             await client.send_message(chat_id=LOG_CHANNEL, text=(script.NORSLTS.format(reqstr.id, reqstr.mention, mv_rqst)))
@@ -3019,7 +3007,7 @@ async def advantage_spell_chok(client, name, msg, reply_msg, vj_search):
         button = [[
             InlineKeyboardButton("Gᴏᴏɢʟᴇ", url=f"https://www.google.com/search?q={reqst_gle}")
         ],[
-            InlineKeyboardButton("🎬 Rᴇǫᴜᴇsᴛ Tʜɪs Mᴏᴠɪᴇ Tᴏ Aᴅᴍɪɴ", callback_data="reqmovie")
+            InlineKeyboardButton("🎬 Rᴇǫᴜᴇsᴛ Tʜɪs Mᴏᴠɪᴇ Tᴏ Aᴅᴍɪɴ", url=f"https://t.me/{temp.U_NAME}?start=reqmovie")
         ]]
         if NO_RESULTS_MSG:
             await client.send_message(chat_id=LOG_CHANNEL, text=(script.NORSLTS.format(reqstr.id, reqstr.mention, mv_rqst)))
@@ -3037,7 +3025,7 @@ async def advantage_spell_chok(client, name, msg, reply_msg, vj_search):
             ]
             for k, movie_name in enumerate(movielist)
         ]
-        btn.append([InlineKeyboardButton("🎬 Rᴇǫᴜᴇsᴛ Tʜɪs Mᴏᴠɪᴇ Tᴏ Aᴅᴍɪɴ", callback_data="reqmovie")])
+        btn.append([InlineKeyboardButton("🎬 Rᴇǫᴜᴇsᴛ Tʜɪs Mᴏᴠɪᴇ Tᴏ Aᴅᴍɪɴ", url=f"https://t.me/{temp.U_NAME}?start=reqmovie")])
         btn.append([InlineKeyboardButton(text="Close", callback_data=f'spol#{reqstr1}#close_spellcheck')])
         spell_check_del = await reply_msg.edit_text(
             text=script.CUDNT_FND.format(mv_rqst),

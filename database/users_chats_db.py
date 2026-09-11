@@ -5,7 +5,7 @@
 import re
 from pymongo.errors import DuplicateKeyError
 import motor.motor_asyncio
-from pymongo import MongoClient
+from pymongo import MongoClient, ReturnDocument
 from info import DATABASE_NAME, USER_DB_URI, OTHER_DB_URI, CUSTOM_FILE_CAPTION, IMDB, IMDB_TEMPLATE, MELCOW_NEW_USERS, BUTTON_MODE, SPELL_CHECK_REPLY, PROTECT_CONTENT, AUTO_DELETE, MAX_BTN, AUTO_FFILTER, SHORTLINK_API, SHORTLINK_URL, SHORTLINK_MODE, TUTORIAL, IS_TUTORIAL
 import time
 import datetime
@@ -66,6 +66,9 @@ class Database:
         self.grp = self.db.groups
         self.users = self.db.uersz
         self.bot = self.db.clone_bots
+        self.counters = self.db.counters
+        self.requests = self.db.requests
+        self.watchlist = self.db.watchlist
 
 
     def new_user(self, id, name):
@@ -306,7 +309,68 @@ class Database:
     async def get_save(self, id):
         user = await self.col.find_one({'id': int(id)})
         return user.get('save', False) 
-    
+
+    async def get_next_request_id(self):
+        result = await self.counters.find_one_and_update(
+            {'_id': 'movie_request_id'},
+            {'$inc': {'seq': 1}},
+            upsert=True,
+            return_document=ReturnDocument.AFTER
+        )
+        return result['seq']
+
+    async def save_request(self, req_id, user_id, mention, name, year, language):
+        await self.requests.insert_one({
+            '_id': req_id,
+            'user_id': user_id,
+            'mention': mention,
+            'name': name,
+            'year': year,
+            'language': language,
+            'status': 'pending',
+            'time': datetime.datetime.utcnow()
+        })
+
+    async def update_request_status(self, req_id, status, admin_id=None):
+        await self.requests.update_one(
+            {'_id': req_id},
+            {'$set': {'status': status, 'handled_by': admin_id, 'handled_time': datetime.datetime.utcnow()}}
+        )
+
+    async def get_pending_requests(self, limit=15):
+        cursor = self.requests.find({'status': 'pending'}).sort('_id', 1).limit(limit)
+        return [doc async for doc in cursor]
+
+    async def count_pending_requests(self):
+        return await self.requests.count_documents({'status': 'pending'})
+
+    async def add_to_watchlist(self, user_id, name):
+        wl_id = await self.counters.find_one_and_update(
+            {'_id': 'watchlist_id'},
+            {'$inc': {'seq': 1}},
+            upsert=True,
+            return_document=ReturnDocument.AFTER
+        )
+        wl_id = wl_id['seq']
+        await self.watchlist.insert_one({
+            '_id': wl_id,
+            'user_id': user_id,
+            'name': name,
+            'time': datetime.datetime.utcnow()
+        })
+        return wl_id
+
+    async def get_watchlist(self, user_id):
+        cursor = self.watchlist.find({'user_id': user_id}).sort('_id', 1)
+        return [doc async for doc in cursor]
+
+    async def remove_from_watchlist(self, user_id, wl_id):
+        result = await self.watchlist.delete_one({'_id': wl_id, 'user_id': user_id})
+        return result.deleted_count > 0
+
+    async def get_all_watchlist(self):
+        cursor = self.watchlist.find({})
+        return [doc async for doc in cursor]
+
 
 db = Database(USER_DB_URI, DATABASE_NAME)
-

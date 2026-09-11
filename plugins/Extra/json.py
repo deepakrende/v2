@@ -27,7 +27,7 @@ async def jsonify(_, message):
             caption=str(e),
             disable_notification=True,
             quote=True,
-            reply_markup=reply_markup
+            reply_markup=pk
         )            
         os.remove("json.text")
 
@@ -46,7 +46,3 @@ async def create_file(c, message):
         os.remove(str(file_name))
     except Exception as e:
         await message.reply(e)
-
-
-
-

@@ -22,7 +22,11 @@ logger.setLevel(logging.INFO)
 join_db = JoinReqs
 BTN_URL_REGEX = re.compile(r"(\[([^\[]+?)\]\((buttonurl|buttonalert):(?:/{0,2})(.+?)(:same)?\))")
 
-imdb = Cinemagoer() 
+try:
+    imdb = Cinemagoer()
+except Exception as e:
+    logger.error(f"Failed to initialize Cinemagoer (IMDb lookups will be disabled): {e}")
+    imdb = None
 TOKENS = {}
 VERIFIED = {}
 BANNED = {}
@@ -94,6 +98,8 @@ async def is_subscribed(bot, query):
         return False
 
 async def get_poster(query, bulk=False, id=False, file=None):
+    if imdb is None:
+        return None
     if not id:
         query = (query.strip()).lower()
         title = query
@@ -107,7 +113,11 @@ async def get_poster(query, bulk=False, id=False, file=None):
                 year = list_to_str(year[:1]) 
         else:
             year = None
-        movieid = imdb.search_movie(title.lower(), results=10)
+        try:
+            movieid = imdb.search_movie(title.lower(), results=10)
+        except Exception as e:
+            logger.error(f"IMDb search_movie failed: {e}")
+            return None
         if not movieid:
             return None
         if year:
@@ -124,7 +134,11 @@ async def get_poster(query, bulk=False, id=False, file=None):
         movieid = movieid[0].movieID
     else:
         movieid = query
-    movie = imdb.get_movie(movieid)
+    try:
+        movie = imdb.get_movie(movieid)
+    except Exception as e:
+        logger.error(f"IMDb get_movie failed: {e}")
+        return None
     if not movie:
         return None
     if movie.get("original air date"):
@@ -736,4 +750,3 @@ async def get_seconds(time_string):
         return value * 86400 * 365
     else:
         return 0
-

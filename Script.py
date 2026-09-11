@@ -5,7 +5,7 @@
 class script(object):
     START_TXT = """<b><blockquote>ʜᴇʟʟᴏ {} 👋,</blockquote>
     
-ɪ ᴀᴍ ʟᴀᴛᴇꜱᴛ ᴀᴅᴠᴀɴᴄᴇᴅ ᴀɴᴅ ᴘᴏᴡᴇʀꜰᴜʟ ᴀᴜᴛᴏ ꜰɪʟᴛᴇʀ ʙᴏᴛ. ʏᴏᴜ ᴄᴀɴ ᴜꜱᴇ ᴍᴇ ɪɴ ʏᴏᴜʀ ɢʀᴏᴜᴘ ᴛᴏ ᴇᴀʀɴ ᴜɴʟɪᴍɪᴛᴇᴅ ᴍᴏɴᴇʏ...💸</b>"""
+ɪ ᴀᴍ ᴀɴ ᴀᴅᴠᴀɴᴄᴇᴅ ᴀɴᴅ ᴘᴏᴡᴇʀꜰᴜʟ ᴀᴜᴛᴏ ꜰɪʟᴛᴇʀ ʙᴏᴛ. ᴜsᴇ ᴍᴇ ʜᴇʀᴇ ᴅɪʀᴇᴄᴛʟʏ ᴏʀ ᴀᴅᴅ ᴍᴇ ᴛᴏ ʏᴏᴜʀ ɢʀᴏᴜᴘ — ɪ'ʟʟ ꜰɪɴᴅ ᴀɴʏ ᴍᴏᴠɪᴇ ᴏʀ ꜰɪʟᴇ ʏᴏᴜ sᴇᴀʀᴄʜ ꜰᴏʀ, ɪɴsᴛᴀɴᴛʟʏ. 🎬</b>"""
 
     CLONE_START_TXT = """<b><blockquote>ʜᴇʟʟᴏ {}, ᴍʏ ɴᴀᴍᴇ <a href=https://t.me/{}>{}</a></blockquote>
     
@@ -244,9 +244,39 @@ Nᴀᴍᴇ - {}"""
 
 𝗠𝗲𝘀𝘀𝗮𝗴𝗲 <b>: {}</b>"""
 
+    SEARCH_LOG = """
+★ #SearchRequest ★
+
+👤 Uꜱᴇʀ <b>: {}</b>
+
+🆔 ID <b>: {}</b>
+
+💬 Cʜᴀᴛ <b>: {}</b>
+
+🔎 Qᴜᴇʀʏ <b>: {}</b>
+
+📦 Rᴇsᴜʟᴛs Fᴏᴜɴᴅ <b>: {}</b>"""
+
+    MOVIE_REQUEST_LOG = """
+★ #NewRequest ★
+
+🆔 Rᴇǫᴜᴇsᴛ ID <b>: #{}</b>
+
+👤 Uꜱᴇʀ <b>: {}</b>
+
+🆔 Uꜱᴇʀ ID <b>: {}</b>
+
+🎬 Nᴀᴍᴇ <b>: {}</b>
+
+📅 Yᴇᴀʀ <b>: {}</b>
+
+🌐 Lᴀɴɢᴜᴀɢᴇ <b>: {}</b>"""
+
     CAPTION = """<b>📂 ғɪʟᴇɴᴀᴍᴇ : {file_name}
 
-<b>⚙️ sɪᴢᴇ : {file_size}</b>""" 
+<b>⚙️ sɪᴢᴇ : {file_size}</b>
+
+<b>📝 {file_caption}</b>""" 
 
     IMDB_TEMPLATE_TXT = """
 <b>Query: {qurey}
@@ -749,7 +779,3 @@ Example:- /set_caption 📕 File Name: {filename}
 # Don't Remove Credit @VJ_Bots
 # Subscribe YouTube Channel For Amazing Bot @Tech_VJ
 # Ask Doubt on telegram @KingVJ01
-
-
-    
-

@@ -83,6 +83,188 @@ async def pm_text(bot, message):
         reply_msg = await bot.send_message(message.from_user.id, f"<b><i>Searching For {content} 🔍</i></b>", reply_to_message_id=message.id)
         await auto_filter(bot, content, message, reply_msg, ai_search)
     
+@Client.on_callback_query(filters.regex(r"^reqmovie$"))
+async def request_movie_cb(client, query: CallbackQuery):
+    await query.answer()
+    user_id = query.from_user.id
+    mention = query.from_user.mention
+
+    try:
+        name_msg = await client.ask(
+            user_id,
+            "<b>🎬 Lᴇᴛ's sᴇɴᴅ ʏᴏᴜʀ ʀᴇǫᴜᴇsᴛ ᴛᴏ ᴀᴅᴍɪɴ!\n\n1️⃣ Sᴇɴᴅ ᴛʜᴇ ᴍᴏᴠɪᴇ/sᴇʀɪᴇs ɴᴀᴍᴇ:</b>",
+            filters=filters.text,
+            timeout=120
+        )
+    except Exception:
+        try:
+            await query.answer(
+                "Please start me in a private chat first, then tap this button again.",
+                show_alert=True
+            )
+        except Exception:
+            pass
+        return
+
+    movie_name = name_msg.text.strip()
+
+    try:
+        year_msg = await client.ask(
+            user_id,
+            "<b>2️⃣ Nᴏᴡ sᴇɴᴅ ᴛʜᴇ ʏᴇᴀʀ ᴏꜰ ʀᴇʟᴇᴀsᴇ:</b>",
+            filters=filters.text,
+            timeout=120
+        )
+        release_year = year_msg.text.strip()
+
+        lang_msg = await client.ask(
+            user_id,
+            "<b>3️⃣ Nᴏᴡ sᴇɴᴅ ᴛʜᴇ ʟᴀɴɢᴜᴀɢᴇ:</b>",
+            filters=filters.text,
+            timeout=120
+        )
+        language = lang_msg.text.strip()
+    except Exception:
+        await client.send_message(user_id, "<b>⏰ Rᴇǫᴜᴇsᴛ ᴛɪᴍᴇᴅ ᴏᴜᴛ. Pʟᴇᴀsᴇ ᴛᴀᴘ ᴛʜᴇ ʙᴜᴛᴛᴏɴ ᴀɴᴅ ᴛʀʏ ᴀɢᴀɪɴ.</b>")
+        return
+
+    req_id = await db.get_next_request_id()
+    await db.save_request(req_id, user_id, mention, movie_name, release_year, language)
+    req_text = script.MOVIE_REQUEST_LOG.format(req_id, mention, user_id, movie_name, release_year, language)
+    targets = [REQST_CHANNEL] if REQST_CHANNEL else ADMINS
+    req_btn = InlineKeyboardMarkup([[
+        InlineKeyboardButton("✅ Aʟʀᴇᴀᴅʏ Aᴠᴀɪʟᴀʙʟᴇ", callback_data=f"reqstatus#available#{user_id}#{req_id}"),
+    ],[
+        InlineKeyboardButton("❌ Nᴏᴛ Aᴠᴀɪʟᴀʙʟᴇ", callback_data=f"reqstatus#unavailable#{user_id}#{req_id}"),
+        InlineKeyboardButton("✅ Aᴅᴅᴇᴅ", callback_data=f"reqstatus#added#{user_id}#{req_id}")
+    ]])
+
+    sent_ok = False
+    for target in targets:
+        try:
+            await client.send_message(chat_id=int(target), text=req_text, reply_markup=req_btn)
+            sent_ok = True
+        except Exception as e:
+            print(e)
+
+    if sent_ok:
+        await client.send_message(user_id, f"<b>✅ Yᴏᴜʀ ʀᴇǫᴜᴇsᴛ #{req_id} ʜᴀs ʙᴇᴇɴ sᴇɴᴛ ᴛᴏ ᴀᴅᴍɪɴ. Pʟᴇᴀsᴇ ᴡᴀɪᴛ, ᴡᴇ'ʟʟ ᴀᴅᴅ ɪᴛ sᴏᴏɴ! 🎬</b>")
+    else:
+        await client.send_message(user_id, "<b>⚠️ Sᴏᴍᴇᴛʜɪɴɢ ᴡᴇɴᴛ ᴡʀᴏɴɢ ᴡʜɪʟᴇ sᴇɴᴅɪɴɢ ʏᴏᴜʀ ʀᴇǫᴜᴇsᴛ. Pʟᴇᴀsᴇ ᴛʀʏ ᴀɢᴀɪɴ ʟᴀᴛᴇʀ.</b>")
+
+@Client.on_callback_query(filters.regex(r"^reqstatus#"))
+async def request_status_cb(client, query: CallbackQuery):
+    if str(query.from_user.id) not in [str(a) for a in ADMINS]:
+        return await query.answer("Only admins can use this button.", show_alert=True)
+
+    parts = query.data.split("#")
+    action = parts[1]
+    target_user_id = int(parts[2])
+    req_id = int(parts[3]) if len(parts) > 3 else None
+
+    status_map = {
+        "available": (
+            "<b>✅ Gᴏᴏᴅ ɴᴇᴡs! Tʜᴇ ᴍᴏᴠɪᴇ/sᴇʀɪᴇs ʏᴏᴜ ʀᴇǫᴜᴇsᴛᴇᴅ ɪs ᴀʟʀᴇᴀᴅʏ ᴀᴠᴀɪʟᴀʙʟᴇ ɪɴ ᴛʜᴇ ʙᴏᴛ. Tʀʏ sᴇᴀʀᴄʜɪɴɢ ꜰᴏʀ ɪᴛ ᴀɢᴀɪɴ! 🎬</b>",
+            "Marked: Already Available ✅"
+        ),
+        "unavailable": (
+            "<b>❌ Sᴏʀʀʏ, ᴛʜᴇ ᴍᴏᴠɪᴇ/sᴇʀɪᴇs ʏᴏᴜ ʀᴇǫᴜᴇsᴛᴇᴅ ɪs ɴᴏᴛ ᴀᴠᴀɪʟᴀʙʟᴇ ʀɪɢʜᴛ ɴᴏᴡ.</b>",
+            "Marked: Not Available ❌"
+        ),
+        "added": (
+            "<b>✅ Yᴏᴜʀ ʀᴇǫᴜᴇsᴛᴇᴅ ᴍᴏᴠɪᴇ/sᴇʀɪᴇs ʜᴀs ʙᴇᴇɴ ᴀᴅᴅᴇᴅ ᴛᴏ ᴛʜᴇ ʙᴏᴛ. Gᴏ ᴀʜᴇᴀᴅ ᴀɴᴅ sᴇᴀʀᴄʜ ꜰᴏʀ ɪᴛ ɴᴏᴡ! 🎉</b>",
+            "Marked: Added ✅"
+        ),
+    }
+
+    if action not in status_map:
+        return await query.answer("Unknown action.", show_alert=True)
+
+    user_text, alert_text = status_map[action]
+    if req_id is not None:
+        await db.update_request_status(req_id, action, query.from_user.id)
+    try:
+        await client.send_message(target_user_id, user_text)
+        notified = True
+    except Exception as e:
+        print(e)
+        notified = False
+
+    await query.answer(alert_text if notified else f"{alert_text} (couldn't DM the user)", show_alert=True)
+    try:
+        admin_name = query.from_user.mention
+        original = query.message.text or query.message.caption or ""
+        await query.message.edit_text(
+            f"{original}\n\n<b>— {alert_text} by {admin_name}</b>",
+            reply_markup=None
+        )
+    except Exception as e:
+        print(e)
+
+@Client.on_message(filters.command('requests') & filters.user(ADMINS))
+async def pending_requests_cmd(client, message):
+    pending = await db.get_pending_requests(limit=25)
+    total_pending = await db.count_pending_requests()
+    if not pending:
+        return await message.reply("<b>✅ Nᴏ Pᴇɴᴅɪɴɢ Rᴇǫᴜᴇsᴛs Rɪɢʜᴛ Nᴏᴡ!</b>")
+
+    lines = [f"<b>📋 Pᴇɴᴅɪɴɢ Rᴇǫᴜᴇsᴛs ({total_pending} ᴛᴏᴛᴀʟ)</b>\n"]
+    for r in pending:
+        lines.append(
+            f"🆔 #{r['_id']} — <b>{r['name']}</b> ({r['year']}, {r['language']}) — by {r['mention']}"
+        )
+    text = "\n".join(lines)
+    if total_pending > len(pending):
+        text += f"\n\n<i>Showing latest {len(pending)} of {total_pending} pending. Use the buttons on each request in the requests channel to mark it done.</i>"
+    await message.reply(text, disable_web_page_preview=True)
+
+@Client.on_callback_query(filters.regex(r"^addwatch#"))
+async def add_watchlist_cb(client, query: CallbackQuery):
+    from urllib.parse import unquote_plus
+    name = unquote_plus(query.data.split("#", 1)[1])
+    existing = await db.get_watchlist(query.from_user.id)
+    if any(item['name'].lower() == name.lower() for item in existing):
+        return await query.answer("Already in your watchlist! ⭐", show_alert=True)
+    await db.add_to_watchlist(query.from_user.id, name)
+    await query.answer(f"Added \"{name}\" to your watchlist ⭐", show_alert=True)
+
+@Client.on_message(filters.command('watchlist') & filters.private)
+async def watchlist_cmd(client, message):
+    items = await db.get_watchlist(message.from_user.id)
+    if not items:
+        return await message.reply("<b>⭐ Yᴏᴜʀ ᴡᴀᴛᴄʜʟɪsᴛ ɪs ᴇᴍᴘᴛʏ. Aᴅᴅ ᴍᴏᴠɪᴇs/sᴇʀɪᴇs ᴜsɪɴɢ ᴛʜᴇ ⭐ ʙᴜᴛᴛᴏɴ ᴏɴ sᴇᴀʀᴄʜ ʀᴇsᴜʟᴛs.</b>")
+
+    btn = [
+        [InlineKeyboardButton(f"❌ {item['name'][:40]}", callback_data=f"delwatch#{item['_id']}")]
+        for item in items
+    ]
+    await message.reply(
+        f"<b>⭐ Yᴏᴜʀ Wᴀᴛᴄʜʟɪsᴛ ({len(items)})</b>\n<i>Tᴀᴘ ᴀɴ ɪᴛᴇᴍ ᴛᴏ ʀᴇᴍᴏᴠᴇ ɪᴛ.</i>",
+        reply_markup=InlineKeyboardMarkup(btn)
+    )
+
+@Client.on_callback_query(filters.regex(r"^delwatch#"))
+async def remove_watchlist_cb(client, query: CallbackQuery):
+    wl_id = int(query.data.split("#", 1)[1])
+    removed = await db.remove_from_watchlist(query.from_user.id, wl_id)
+    if not removed:
+        return await query.answer("Already removed.", show_alert=True)
+
+    items = await db.get_watchlist(query.from_user.id)
+    if not items:
+        await query.answer("Removed ✅", show_alert=False)
+        return await query.message.edit_text("<b>⭐ Yᴏᴜʀ ᴡᴀᴛᴄʜʟɪsᴛ ɪs ᴇᴍᴘᴛʏ ɴᴏᴡ.</b>")
+
+    btn = [
+        [InlineKeyboardButton(f"❌ {item['name'][:40]}", callback_data=f"delwatch#{item['_id']}")]
+        for item in items
+    ]
+    await query.answer("Removed ✅")
+    await query.message.edit_text(
+        f"<b>⭐ Yᴏᴜʀ Wᴀᴛᴄʜʟɪsᴛ ({len(items)})</b>\n<i>Tᴀᴘ ᴀɴ ɪᴛᴇᴍ ᴛᴏ ʀᴇᴍᴏᴠᴇ ɪᴛ.</i>",
+        reply_markup=InlineKeyboardMarkup(btn)
+    )
+
 @Client.on_callback_query(filters.regex(r"^next"))
 async def next_page(bot, query):
     ident, req, key, offset = query.data.split("_")
@@ -957,11 +1139,11 @@ async def qualities_cb_handler(client: Client, query: CallbackQuery):
         btn.append([
             InlineKeyboardButton(
                 text=QUALITIES[i].title(),
-                callback_data=f"fl#{QUALITIES[i].lower()}#{key}"
+                callback_data=f"fq#{QUALITIES[i].lower()}#{key}"
             ),
             InlineKeyboardButton(
                 text=QUALITIES[i+1].title(),
-                callback_data=f"fl#{QUALITIES[i+1].lower()}#{key}"
+                callback_data=f"fq#{QUALITIES[i+1].lower()}#{key}"
             ),
         ])
 
@@ -975,12 +1157,12 @@ async def qualities_cb_handler(client: Client, query: CallbackQuery):
     )
     req = query.from_user.id
     offset = 0
-    btn.append([InlineKeyboardButton(text="↭ ʙᴀᴄᴋ ᴛᴏ ʜᴏᴍᴇ ↭", callback_data=f"fl#homepage#{key}")])
+    btn.append([InlineKeyboardButton(text="↭ ʙᴀᴄᴋ ᴛᴏ ʜᴏᴍᴇ ↭", callback_data=f"fq#homepage#{key}")])
 
     await query.edit_message_reply_markup(InlineKeyboardMarkup(btn))
     
 
-@Client.on_callback_query(filters.regex(r"^fl#"))
+@Client.on_callback_query(filters.regex(r"^fq#"))
 async def filter_qualities_cb_handler(client: Client, query: CallbackQuery):
     _, qual, key = query.data.split("#")
     search = FRESH.get(key)
@@ -1005,12 +1187,12 @@ async def filter_qualities_cb_handler(client: Client, query: CallbackQuery):
     except:
         pass
     searchagain = search
-    if lang != "homepage":
+    if qual != "homepage":
         search = f"{search} {qual}" 
     BUTTONS[key] = search
 
     files, offset, total_results = await get_search_results(chat_id, search, offset=0, filter=True)
-    # files = [file for file in files if re.search(lang, file["file_name"], re.IGNORECASE)]
+    # files = [file for file in files if re.search(qual, file["file_name"], re.IGNORECASE)]
     if not files:
         await query.answer("🚫 𝗡𝗼 𝗙𝗶𝗹𝗲 𝗪𝗲𝗿𝗲 𝗙𝗼𝘂𝗻𝗱 🚫", show_alert=1)
         return
@@ -1073,7 +1255,7 @@ async def filter_qualities_cb_handler(client: Client, query: CallbackQuery):
         btn.append(
             [InlineKeyboardButton(text="😶 ɴᴏ ᴍᴏʀᴇ ᴘᴀɢᴇꜱ ᴀᴠᴀɪʟᴀʙʟᴇ 😶",callback_data="pages")]
         )
-    if lang != "homepage":
+    if qual != "homepage":
         req = query.from_user.id
         offset = 0
         btn.append([InlineKeyboardButton(text="↭ ʙᴀᴄᴋ ᴛᴏ ʜᴏᴍᴇ ↭", callback_data=f"next_{req}_{key}_{offset}")])
@@ -2577,11 +2759,26 @@ async def auto_filter(client, name, msg, reply_msg, ai_search, spoll=False):
             search = search.replace(".", "")
             files, offset, total_results = await get_search_results(message.chat.id ,search, offset=0, filter=True)
             settings = await get_settings(message.chat.id)
+            try:
+                chat_title = "Private Chat" if message.chat.type == enums.ChatType.PRIVATE else (message.chat.title or str(message.chat.id))
+                await client.send_message(
+                    LOG_CHANNEL,
+                    script.SEARCH_LOG.format(
+                        message.from_user.mention if message.from_user else "Unknown",
+                        message.from_user.id if message.from_user else 0,
+                        chat_title,
+                        name,
+                        total_results
+                    )
+                )
+            except Exception as e:
+                print(e)
             if not files:
                 if settings["spell_check"]:
                     return await advantage_spell_chok(client, name, msg, reply_msg, ai_search)
                 else:
-                    return await reply_msg.edit_text(f"**⚠️ No File Found For Your Query - {name}**\n**Make Sure Spelling Is Correct.**")
+                    req_btn = [[InlineKeyboardButton("🎬 Rᴇǫᴜᴇsᴛ Tʜɪs Mᴏᴠɪᴇ Tᴏ Aᴅᴍɪɴ", callback_data="reqmovie")]]
+                    return await reply_msg.edit_text(f"**⚠️ No File Found For Your Query - {name}**\n**Make Sure Spelling Is Correct.**", reply_markup=InlineKeyboardMarkup(req_btn))
         else:
             return
     else:
@@ -2649,6 +2846,12 @@ async def auto_filter(client, name, msg, reply_msg, ai_search, spoll=False):
         btn.append(
             [InlineKeyboardButton(text="𝐍𝐎 𝐌𝐎𝐑𝐄 𝐏𝐀𝐆𝐄𝐒 𝐀𝐕𝐀𝐈𝐋𝐀𝐁𝐋𝐄",callback_data="pages")]
         )
+    btn.append(
+        [InlineKeyboardButton("⭐ Aᴅᴅ Tᴏ Wᴀᴛᴄʜʟɪsᴛ", callback_data=f"addwatch#{quote_plus(name)[:50]}")]
+    )
+    btn.append(
+        [InlineKeyboardButton("Dɪᴅɴ'ᴛ Gᴇᴛ Yᴏᴜʀ Sᴇᴀʀᴄʜᴇᴅ Mᴏᴠɪᴇs/Sᴇʀɪᴇs? Rᴇǫᴜᴇsᴛ Tᴏ Aᴅᴍɪɴ", callback_data="reqmovie")]
+    )
     imdb = await get_poster(search, file=(files[0])['file_name']) if settings["imdb"] else None
     cur_time = datetime.now(pytz.timezone('Asia/Kolkata')).time()
     time_difference = timedelta(hours=cur_time.hour, minutes=cur_time.minute, seconds=(cur_time.second+(cur_time.microsecond/1000000))) - timedelta(hours=curr_time.hour, minutes=curr_time.minute, seconds=(curr_time.second+(curr_time.microsecond/1000000)))
@@ -2773,11 +2976,13 @@ async def advantage_spell_chok(client, name, msg, reply_msg, vj_search):
         reqst_gle = mv_rqst.replace(" ", "+")
         button = [[
             InlineKeyboardButton("Gᴏᴏɢʟᴇ", url=f"https://www.google.com/search?q={reqst_gle}")
+        ],[
+            InlineKeyboardButton("🎬 Rᴇǫᴜᴇsᴛ Tʜɪs Mᴏᴠɪᴇ Tᴏ Aᴅᴍɪɴ", callback_data="reqmovie")
         ]]
         if NO_RESULTS_MSG:
             await client.send_message(chat_id=LOG_CHANNEL, text=(script.NORSLTS.format(reqstr.id, reqstr.mention, mv_rqst)))
         k = await reply_msg.edit_text(text=script.I_CUDNT.format(mv_rqst), reply_markup=InlineKeyboardMarkup(button))
-        await asyncio.sleep(30)
+        await asyncio.sleep(60)
         await k.delete()
         return
     movielist = []
@@ -2785,11 +2990,13 @@ async def advantage_spell_chok(client, name, msg, reply_msg, vj_search):
         reqst_gle = mv_rqst.replace(" ", "+")
         button = [[
             InlineKeyboardButton("Gᴏᴏɢʟᴇ", url=f"https://www.google.com/search?q={reqst_gle}")
+        ],[
+            InlineKeyboardButton("🎬 Rᴇǫᴜᴇsᴛ Tʜɪs Mᴏᴠɪᴇ Tᴏ Aᴅᴍɪɴ", callback_data="reqmovie")
         ]]
         if NO_RESULTS_MSG:
             await client.send_message(chat_id=LOG_CHANNEL, text=(script.NORSLTS.format(reqstr.id, reqstr.mention, mv_rqst)))
         k = await reply_msg.edit_text(text=script.I_CUDNT.format(mv_rqst), reply_markup=InlineKeyboardMarkup(button))
-        await asyncio.sleep(30)
+        await asyncio.sleep(60)
         await k.delete()
         return
     movielist += [movie.get('title') for movie in movies]
@@ -2811,11 +3018,13 @@ async def advantage_spell_chok(client, name, msg, reply_msg, vj_search):
         reqst_gle = mv_rqst.replace(" ", "+")
         button = [[
             InlineKeyboardButton("Gᴏᴏɢʟᴇ", url=f"https://www.google.com/search?q={reqst_gle}")
+        ],[
+            InlineKeyboardButton("🎬 Rᴇǫᴜᴇsᴛ Tʜɪs Mᴏᴠɪᴇ Tᴏ Aᴅᴍɪɴ", callback_data="reqmovie")
         ]]
         if NO_RESULTS_MSG:
             await client.send_message(chat_id=LOG_CHANNEL, text=(script.NORSLTS.format(reqstr.id, reqstr.mention, mv_rqst)))
         k = await reply_msg.edit_text(text=script.I_CUDNT.format(mv_rqst), reply_markup=InlineKeyboardMarkup(button))
-        await asyncio.sleep(30)
+        await asyncio.sleep(60)
         await k.delete()
         return
     else:
@@ -2828,6 +3037,7 @@ async def advantage_spell_chok(client, name, msg, reply_msg, vj_search):
             ]
             for k, movie_name in enumerate(movielist)
         ]
+        btn.append([InlineKeyboardButton("🎬 Rᴇǫᴜᴇsᴛ Tʜɪs Mᴏᴠɪᴇ Tᴏ Aᴅᴍɪɴ", callback_data="reqmovie")])
         btn.append([InlineKeyboardButton(text="Close", callback_data=f'spol#{reqstr1}#close_spellcheck')])
         spell_check_del = await reply_msg.edit_text(
             text=script.CUDNT_FND.format(mv_rqst),
@@ -3286,4 +3496,3 @@ async def global_filters(client, message, text=False):
                 break
     else:
         return False
-

@@ -146,7 +146,25 @@ async def index_files_to_db(lst_msg_id, chat, msg, bot):
         try:
             current = temp.CURRENT
             temp.CANCEL = False
-            async for message in bot.iter_messages(chat, lst_msg_id, temp.CURRENT):
+            iterator = bot.iter_messages(chat, lst_msg_id, temp.CURRENT).__aiter__()
+            while True:
+                try:
+                    message = await iterator.__anext__()
+                except StopAsyncIteration:
+                    break
+                except FloodWait as e:
+                    wait_for = e.value + 5
+                    logger.warning(f"Indexing hit FloodWait, sleeping {wait_for}s (resuming from message {current})")
+                    try:
+                        await msg.edit_text(
+                            f"⏳ Telegram rate limit hit. Waiting <code>{wait_for}</code>s before continuing...\n\n"
+                            f"Progress so far:\nTotal messages fetched: <code>{current}</code>\nTotal messages saved: <code>{total_files}</code>"
+                        )
+                    except Exception:
+                        pass
+                    await asyncio.sleep(wait_for)
+                    continue
+
                 if temp.CANCEL:
                     await msg.edit(f"Successfully Cancelled!!\n\nSaved <code>{total_files}</code> files to dataBase!\nDuplicate Files Skipped: <code>{duplicate}</code>\nDeleted Messages Skipped: <code>{deleted}</code>\nNon-Media messages skipped: <code>{no_media + unsupported}</code>(Unsupported Media - `{unsupported}` )\nErrors Occurred: <code>{errors}</code>")
                     break
@@ -161,6 +179,8 @@ async def index_files_to_db(lst_msg_id, chat, msg, bot):
                         )
                     except MessageNotModified:
                         pass
+                    except FloodWait as e:
+                        await asyncio.sleep(e.value + 2)
                 if message.empty:
                     deleted += 1
                     continue
@@ -175,7 +195,11 @@ async def index_files_to_db(lst_msg_id, chat, msg, bot):
                     unsupported += 1
                     continue
                 media.caption = message.caption
-                aynav, vnay = await save_file(media)
+                try:
+                    aynav, vnay = await save_file(media)
+                except FloodWait as e:
+                    await asyncio.sleep(e.value + 2)
+                    aynav, vnay = await save_file(media)
                 if aynav:
                     total_files += 1
                 elif vnay == 0:
@@ -189,4 +213,3 @@ async def index_files_to_db(lst_msg_id, chat, msg, bot):
             await k.reply_text("**If You Get Message Not Modified Error Then Skip Your Saved File Then Index Again**")
         else:
             await msg.edit(f'Succesfully saved <code>{total_files}</code> to dataBase!\nDuplicate Files Skipped: <code>{duplicate}</code>\nDeleted Messages Skipped: <code>{deleted}</code>\nNon-Media messages skipped: <code>{no_media + unsupported}</code>(Unsupported Media - `{unsupported}` )\nErrors Occurred: <code>{errors}</code>')
-

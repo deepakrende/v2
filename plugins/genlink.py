@@ -82,36 +82,47 @@ async def gen_link_batch(bot, message):
     # file store without db channel
     og_msg = 0
     tot = 0
-    async for msg in bot.iter_messages(f_chat_id, l_msg_id, f_msg_id):
-        tot += 1
-        if msg.empty or msg.service:
-            continue
-        if not msg.media:
-            # only media messages supported.
-            continue
-        try:
-            file_type = msg.media
-            file = getattr(msg, file_type.value)
-            caption = getattr(msg, 'caption', '')
-            if caption:
-                caption = caption.html
-            if file:
-                file = {
-                    "file_id": file.file_id,
-                    "caption": caption,
-                    "title": getattr(file, "file_name", ""),
-                    "size": file.file_size,
-                    "protect": cmd.lower().strip() == "/pbatch",
-                }
+    try:
+        async for msg in bot.iter_messages(f_chat_id, l_msg_id, f_msg_id):
+            tot += 1
+            if msg.empty or msg.service:
+                continue
+            if not msg.media:
+                # only media messages supported.
+                continue
+            try:
+                file_type = msg.media
+                file = getattr(msg, file_type.value)
+                caption = getattr(msg, 'caption', '')
+                if caption:
+                    caption = caption.html
+                if file:
+                    file = {
+                        "file_id": file.file_id,
+                        "caption": caption,
+                        "title": getattr(file, "file_name", ""),
+                        "size": file.file_size,
+                        "protect": cmd.lower().strip() == "/pbatch",
+                    }
 
-                og_msg +=1
-                outlist.append(file)
-        except:
-            pass
-    with open(f"batchmode_{message.from_user.id}.json", "w+") as out:
-        json.dump(outlist, out)
-    post = await bot.send_document(LOG_CHANNEL, f"batchmode_{message.from_user.id}.json", file_name="Batch.json", caption="⚠️Generated for filestore.")
-    os.remove(f"batchmode_{message.from_user.id}.json")
-    file_id, ref = unpack_new_file_id(post.document.file_id)
-    await sts.edit(f"Here is your link\nContains `{og_msg}` files.\n https://t.me/{temp.U_NAME}?start=BATCH-{file_id}")
+                    og_msg +=1
+                    outlist.append(file)
+            except Exception as e:
+                logger.error(f"Batch: failed to process message {msg.id}: {e}")
 
+        if og_msg == 0:
+            return await sts.edit("No supported media files were found in that message range. Make sure the bot can read message history in that chat and the range actually contains files.")
+
+        with open(f"batchmode_{message.from_user.id}.json", "w+") as out:
+            json.dump(outlist, out)
+        post = await bot.send_document(LOG_CHANNEL, f"batchmode_{message.from_user.id}.json", file_name="Batch.json", caption="⚠️Generated for filestore.")
+        os.remove(f"batchmode_{message.from_user.id}.json")
+        file_id, ref = unpack_new_file_id(post.document.file_id)
+        await sts.edit(f"Here is your link\nContains `{og_msg}` files.\n https://t.me/{temp.U_NAME}?start=BATCH-{file_id}")
+    except Exception as e:
+        logger.error(f"Batch link generation failed: {e}")
+        await sts.edit(
+            f"<b>⚠️ Batch link generation failed:</b>\n<code>{e}</code>\n\n"
+            "Common causes: the bot isn't an admin/member of the source chat, "
+            "it can't read message history there, or LOG_CHANNEL is misconfigured."
+        )

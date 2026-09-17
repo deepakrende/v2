@@ -10,6 +10,7 @@ from pyrogram.errors import FloodWait, MessageNotModified
 from pyrogram.errors.exceptions.bad_request_400 import ChannelInvalid, ChatAdminRequired, UsernameInvalid, UsernameNotModified
 from info import INDEX_REQ_CHANNEL as LOG_CHANNEL
 from database.ia_filterdb import save_file
+from database.users_chats_db import db
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 logger = logging.getLogger(__name__)
@@ -145,8 +146,21 @@ async def index_files_to_db(lst_msg_id, chat, msg, bot):
     async with lock:
         try:
             current = temp.CURRENT
+            saved = await db.get_index_progress(chat)
+            if saved and saved.get('lst_msg_id') == lst_msg_id:
+                current = saved.get('current', current)
+                total_files = saved.get('total_files', 0)
+                duplicate = saved.get('duplicate', 0)
+                errors = saved.get('errors', 0)
+                deleted = saved.get('deleted', 0)
+                no_media = saved.get('no_media', 0)
+                unsupported = saved.get('unsupported', 0)
+                try:
+                    await msg.edit_text(f"📥 Resuming a previous indexing run for this chat from message <code>{current}</code> (saved automatically after it last stopped)...")
+                except Exception:
+                    pass
             temp.CANCEL = False
-            iterator = bot.iter_messages(chat, lst_msg_id, temp.CURRENT).__aiter__()
+            iterator = bot.iter_messages(chat, lst_msg_id, current).__aiter__()
             while True:
                 try:
                     message = await iterator.__anext__()
@@ -155,6 +169,7 @@ async def index_files_to_db(lst_msg_id, chat, msg, bot):
                 except FloodWait as e:
                     wait_for = e.value + 5
                     logger.warning(f"Indexing hit FloodWait, sleeping {wait_for}s (resuming from message {current})")
+                    await db.save_index_progress(chat, lst_msg_id, current, total_files, duplicate, errors, deleted, no_media, unsupported)
                     try:
                         await msg.edit_text(
                             f"⏳ Telegram rate limit hit. Waiting <code>{wait_for}</code>s before continuing...\n\n"
@@ -166,12 +181,14 @@ async def index_files_to_db(lst_msg_id, chat, msg, bot):
                     continue
 
                 if temp.CANCEL:
-                    await msg.edit(f"Successfully Cancelled!!\n\nSaved <code>{total_files}</code> files to dataBase!\nDuplicate Files Skipped: <code>{duplicate}</code>\nDeleted Messages Skipped: <code>{deleted}</code>\nNon-Media messages skipped: <code>{no_media + unsupported}</code>(Unsupported Media - `{unsupported}` )\nErrors Occurred: <code>{errors}</code>")
+                    await db.save_index_progress(chat, lst_msg_id, current, total_files, duplicate, errors, deleted, no_media, unsupported)
+                    await msg.edit(f"Successfully Cancelled!!\n\nSaved <code>{total_files}</code> files to dataBase!\nDuplicate Files Skipped: <code>{duplicate}</code>\nDeleted Messages Skipped: <code>{deleted}</code>\nNon-Media messages skipped: <code>{no_media + unsupported}</code>(Unsupported Media - `{unsupported}` )\nErrors Occurred: <code>{errors}</code>\n\n<i>Progress saved — run /index again with the same link to resume from here.</i>")
                     break
                 current += 1
                 if current % 30 == 0:
                     can = [[InlineKeyboardButton('Cancel', callback_data='index_cancel')]]
                     reply = InlineKeyboardMarkup(can)
+                    await db.save_index_progress(chat, lst_msg_id, current, total_files, duplicate, errors, deleted, no_media, unsupported)
                     try:
                         await msg.edit_text(
                             text=f"Total messages fetched: <code>{current}</code>\nTotal messages saved: <code>{total_files}</code>\nDuplicate Files Skipped: <code>{duplicate}</code>\nDeleted Messages Skipped: <code>{deleted}</code>\nNon-Media messages skipped: <code>{no_media + unsupported}</code>(Unsupported Media - `{unsupported}` )\nErrors Occurred: <code>{errors}</code>",
@@ -208,8 +225,10 @@ async def index_files_to_db(lst_msg_id, chat, msg, bot):
                     errors += 1
         except Exception as e:
             logger.exception(e)
+            await db.save_index_progress(chat, lst_msg_id, current, total_files, duplicate, errors, deleted, no_media, unsupported)
             k = await msg.edit(f'Error: {e}')
             await k.reply_text(f'Succesfully saved <code>{total_files}</code> to dataBase!\nDuplicate Files Skipped: <code>{duplicate}</code>\nDeleted Messages Skipped: <code>{deleted}</code>\nNon-Media messages skipped: <code>{no_media + unsupported}</code>(Unsupported Media - `{unsupported}` )\nErrors Occurred: <code>{errors}</code>')
-            await k.reply_text("**If You Get Message Not Modified Error Then Skip Your Saved File Then Index Again**")
+            await k.reply_text("<b>Progress has been saved automatically — just run /index again with the same channel link and it will resume from here on its own.</b>\n\n**If You Get Message Not Modified Error Then Skip Your Saved File Then Index Again**")
         else:
+            await db.clear_index_progress(chat)
             await msg.edit(f'Succesfully saved <code>{total_files}</code> to dataBase!\nDuplicate Files Skipped: <code>{duplicate}</code>\nDeleted Messages Skipped: <code>{deleted}</code>\nNon-Media messages skipped: <code>{no_media + unsupported}</code>(Unsupported Media - `{unsupported}` )\nErrors Occurred: <code>{errors}</code>')

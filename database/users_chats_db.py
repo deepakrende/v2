@@ -69,6 +69,7 @@ class Database:
         self.counters = self.db.counters
         self.requests = self.db.requests
         self.watchlist = self.db.watchlist
+        self.index_progress = self.db.index_progress
 
 
     def new_user(self, id, name):
@@ -371,6 +372,29 @@ class Database:
     async def get_all_watchlist(self):
         cursor = self.watchlist.find({})
         return [doc async for doc in cursor]
+
+    async def save_index_progress(self, chat_id, lst_msg_id, current, total_files, duplicate, errors, deleted, no_media, unsupported):
+        await self.index_progress.update_one(
+            {'_id': chat_id},
+            {'$set': {
+                'lst_msg_id': lst_msg_id,
+                'current': current,
+                'total_files': total_files,
+                'duplicate': duplicate,
+                'errors': errors,
+                'deleted': deleted,
+                'no_media': no_media,
+                'unsupported': unsupported,
+                'updated_at': datetime.datetime.utcnow()
+            }},
+            upsert=True
+        )
+
+    async def get_index_progress(self, chat_id):
+        return await self.index_progress.find_one({'_id': chat_id})
+
+    async def clear_index_progress(self, chat_id):
+        await self.index_progress.delete_one({'_id': chat_id})
 
 
 db = Database(USER_DB_URI, DATABASE_NAME)

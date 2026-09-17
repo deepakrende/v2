@@ -19,6 +19,24 @@ sec_client = MongoClient(SEC_FILE_DB_URI)
 sec_db = sec_client[DATABASE_NAME]
 sec_col = sec_db[COLLECTION_NAME]
 
+# Indexes are essential once the collection has any real size — without
+# them, every duplicate-check and search does a full collection scan,
+# which gets progressively slower (and eventually impractically slow)
+# as the file count grows into the hundreds of thousands / millions.
+# create_index is idempotent, safe to call on every startup.
+for _c in (col, sec_col):
+    try:
+        _c.create_index('file_id', unique=True)
+    except Exception as _e:
+        # A unique index fails to build if any duplicate file_id values
+        # already exist in the collection. Fall back to a non-unique
+        # index so lookups still speed up — duplicates should be
+        # cleaned up separately (see /deleteall or a one-off dedupe
+        # pass), but this at least keeps the bot from crashing.
+        print(f"Could not create unique index on file_id ({_e}); falling back to a non-unique index.")
+        _c.create_index('file_id')
+    _c.create_index('file_name')
+
 
 async def save_file(media):
     """Save file in the database."""

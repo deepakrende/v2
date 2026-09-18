@@ -2,7 +2,7 @@
 # Subscribe YouTube Channel For Amazing Bot @Tech_VJ
 # Ask Doubt on telegram @KingVJ01
 
-import logging, re, asyncio
+import logging, re, asyncio, time
 from utils import temp
 from info import ADMINS
 from pyrogram import Client, filters, enums
@@ -161,6 +161,8 @@ async def index_files_to_db(lst_msg_id, chat, msg, bot):
                     pass
             temp.CANCEL = False
             iterator = bot.iter_messages(chat, lst_msg_id, current).__aiter__()
+            last_ui_update = 0.0
+            ui_cooldown_until = 0.0
             while True:
                 try:
                     message = await iterator.__anext__()
@@ -186,18 +188,43 @@ async def index_files_to_db(lst_msg_id, chat, msg, bot):
                     break
                 current += 1
                 if current % 30 == 0:
-                    can = [[InlineKeyboardButton('Cancel', callback_data='index_cancel')]]
-                    reply = InlineKeyboardMarkup(can)
+                    # Save progress to the DB every 30 messages regardless —
+                    # it's a local write, not subject to Telegram's limits,
+                    # and is what makes auto-resume work after a restart.
                     await db.save_index_progress(chat, lst_msg_id, current, total_files, duplicate, errors, deleted, no_media, unsupported)
-                    try:
-                        await msg.edit_text(
-                            text=f"Total messages fetched: <code>{current}</code>\nTotal messages saved: <code>{total_files}</code>\nDuplicate Files Skipped: <code>{duplicate}</code>\nDeleted Messages Skipped: <code>{deleted}</code>\nNon-Media messages skipped: <code>{no_media + unsupported}</code>(Unsupported Media - `{unsupported}` )\nErrors Occurred: <code>{errors}</code>",
-                            reply_markup=reply
-                        )
-                    except MessageNotModified:
-                        pass
-                    except FloodWait as e:
-                        await asyncio.sleep(e.value + 2)
+
+                    # But only actually EDIT the Telegram status message at
+                    # most once every 15 seconds. Editing a message on every
+                    # 30-file tick (as often as many times a second on a
+                    # huge, fast channel) is what trips Telegram's message-
+                    # edit rate limit — and that limit, once tripped, blocks
+                    # editing ANY message bot-wide for hours, breaking
+                    # unrelated features like search results elsewhere in
+                    # the bot. Time-based throttling here, not count-based,
+                    # is what actually prevents that.
+                    now = time.time()
+                    if now >= ui_cooldown_until and now - last_ui_update >= 15:
+                        can = [[InlineKeyboardButton('Cancel', callback_data='index_cancel')]]
+                        reply = InlineKeyboardMarkup(can)
+                        try:
+                            await msg.edit_text(
+                                text=f"Total messages fetched: <code>{current}</code>\nTotal messages saved: <code>{total_files}</code>\nDuplicate Files Skipped: <code>{duplicate}</code>\nDeleted Messages Skipped: <code>{deleted}</code>\nNon-Media messages skipped: <code>{no_media + unsupported}</code>(Unsupported Media - `{unsupported}` )\nErrors Occurred: <code>{errors}</code>",
+                                reply_markup=reply
+                            )
+                            last_ui_update = now
+                        except MessageNotModified:
+                            last_ui_update = now
+                        except FloodWait as e:
+                            # Do NOT block real indexing work waiting this
+                            # out — that could be hours for a cosmetic
+                            # counter. Just stop trying to update the status
+                            # message until the cooldown passes, and keep
+                            # indexing in the background the whole time.
+                            logger.warning(f"Status message edit flood-waited for {e.value}s — pausing status updates only, indexing continues.")
+                            ui_cooldown_until = now + e.value + 5
+                        except Exception as e:
+                            logger.error(f"Status message edit failed (non-fatal, indexing continues): {e}")
+                            last_ui_update = now
                 if message.empty:
                     deleted += 1
                     continue

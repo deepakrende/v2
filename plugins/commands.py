@@ -207,72 +207,88 @@ async def start(client, message):
     if data.split("-", 1)[0] == "BATCH":
         sts = await message.reply("<b>ᴘʟᴇᴀsᴇ ᴡᴀɪᴛ...</b>")
         file_id = data.split("-", 1)[1]
+        user_chat = message.from_user.id
         msgs = BATCH_FILES.get(file_id)
         if not msgs:
-            file = await client.download_media(file_id)
-            try: 
-                with open(file) as file_data:
-                    msgs=json.loads(file_data.read())
-            except:
-                await sts.edit("FAILED")
-                return await client.send_message(LOG_CHANNEL, "UNABLE TO OPEN FILE.")
-            os.remove(file)
+            # Load the batch JSON in memory (no shared "downloads/Batch.json" on disk, so
+            # two users opening links at the same time can no longer delete each other's file)
+            for attempt in range(3):
+                try:
+                    buf = await client.download_media(file_id, in_memory=True)
+                    msgs = json.loads(buf.getvalue().decode("utf-8"))
+                    break
+                except FloodWait as e:
+                    await asyncio.sleep(e.value + 1)
+                except Exception as e:
+                    logger.error(f"BATCH: unable to load batch file (attempt {attempt + 1}): {e}")
+                    await asyncio.sleep(2)
+            if not msgs:
+                await sts.edit("<b>❌ Unable to load this batch right now. Please try the link again in a minute.</b>")
+                return await client.send_message(LOG_CHANNEL, f"UNABLE TO OPEN BATCH FILE.\nfile_id: <code>{file_id}</code>")
             BATCH_FILES[file_id] = msgs
 
         filesarr = []
-        for msg in msgs:
-            title = msg.get("title")
-            size=get_size(int(msg.get("size", 0)))
-            f_caption=msg.get("caption", "")
+        failed = 0
+        for item in msgs:
+            title = item.get("title")
+            size = get_size(int(item.get("size", 0)))
+            f_caption = item.get("caption", "")
             if BATCH_FILE_CAPTION:
                 try:
-                    f_caption=BATCH_FILE_CAPTION.format(file_name= '' if title is None else title, file_size='' if size is None else size, file_caption='' if f_caption is None else f_caption)
-                except:
-                    f_caption=f_caption
+                    f_caption = BATCH_FILE_CAPTION.format(file_name='' if title is None else title, file_size='' if size is None else size, file_caption='' if f_caption is None else f_caption)
+                except Exception:
+                    pass
             if f_caption is None:
                 f_caption = f"@VJ_Bots {title}"
-            try:
-                if STREAM_MODE == True:
-                    log_msg = await client.send_cached_media(chat_id=LOG_CHANNEL, file_id=msg.get("file_id"))
-                    fileName = {quote_plus(get_name(log_msg))}
+
+            reply_markup = None
+            if STREAM_MODE == True:
+                try:
+                    log_msg = await client.send_cached_media(chat_id=LOG_CHANNEL, file_id=item.get("file_id"))
                     stream = f"{URL}watch/{str(log_msg.id)}/{quote_plus(get_name(log_msg))}?hash={get_hash(log_msg)}"
                     download = f"{URL}{str(log_msg.id)}/{quote_plus(get_name(log_msg))}?hash={get_hash(log_msg)}"
-
-                if STREAM_MODE == True:
-                    button = [[
+                    reply_markup = InlineKeyboardMarkup([[
                         InlineKeyboardButton("• ᴅᴏᴡɴʟᴏᴀᴅ •", url=download),
                         InlineKeyboardButton('• ᴡᴀᴛᴄʜ •', url=stream)
                     ],[
                         InlineKeyboardButton("• ᴡᴀᴛᴄʜ ɪɴ ᴡᴇʙ ᴀᴘᴘ •", web_app=WebAppInfo(url=stream))
-                    ]]
-                    reply_markup = InlineKeyboardMarkup(button)
-                else:
+                    ]])
+                except Exception as e:
+                    # stream buttons are optional - never let them block the file itself
+                    logger.error(f"BATCH: stream link failed: {e}")
                     reply_markup = None
-                    
-                msg = await client.send_cached_media(
-                    chat_id=message.from_user.id,
-                    file_id=msg.get("file_id"),
-                    caption=f_caption,
-                    protect_content=msg.get('protect', False),
-                    reply_markup=reply_markup
-                )
-                filesarr.append(msg)
-                
-            except FloodWait as e:
-                await asyncio.sleep(e.value)
-                msg = await client.send_cached_media(
-                    chat_id=message.from_user.id,
-                    file_id=msg.get("file_id"),
-                    caption=f_caption,
-                    protect_content=msg.get('protect', False),
-                    reply_markup=InlineKeyboardMarkup(button)
-                )
-                filesarr.append(msg)
-            except:
-                continue
-            await asyncio.sleep(1) 
-        await sts.delete()
-        k = await client.send_message(chat_id = message.from_user.id, text=f"<blockquote><b><u>❗️❗️❗️IMPORTANT❗️️❗️❗️</u></b>\n\nᴛʜɪs ᴍᴇssᴀɢᴇ ᴡɪʟʟ ʙᴇ ᴅᴇʟᴇᴛᴇᴅ ɪɴ <b><u>10 mins</u> 🫥 <i></b>(ᴅᴜᴇ ᴛᴏ ᴄᴏᴘʏʀɪɢʜᴛ ɪssᴜᴇs)</i>.\n\n<b><i>ᴘʟᴇᴀsᴇ ғᴏʀᴡᴀʀᴅ ᴛʜɪs ᴍᴇssᴀɢᴇ ᴛᴏ ʏᴏᴜʀ sᴀᴠᴇᴅ ᴍᴇssᴀɢᴇs ᴏʀ ᴀɴʏ ᴘʀɪᴠᴀᴛᴇ ᴄʜᴀᴛ.</i></b></blockquote>")
+
+            sent = None
+            for _ in range(3):
+                try:
+                    sent = await client.send_cached_media(
+                        chat_id=user_chat,
+                        file_id=item.get("file_id"),
+                        caption=f_caption,
+                        protect_content=item.get('protect', False),
+                        reply_markup=reply_markup
+                    )
+                    break
+                except FloodWait as e:
+                    await asyncio.sleep(e.value + 1)
+                except Exception as e:
+                    logger.error(f"BATCH: failed to send a file to {user_chat}: {e}")
+                    break
+            if sent:
+                filesarr.append(sent)
+            else:
+                failed += 1
+            await asyncio.sleep(1)
+
+        try:
+            await sts.delete()
+        except Exception:
+            pass
+        if not filesarr:
+            return await client.send_message(user_chat, "<b>❌ Sorry, I could not send the files. Please try the link again later.</b>")
+        if failed:
+            await client.send_message(user_chat, f"<b>⚠️ {failed} file(s) could not be sent.</b>")
+        k = await client.send_message(chat_id = user_chat, text=f"<blockquote><b><u>❗️❗️❗️IMPORTANT❗️️❗️❗️</u></b>\n\nᴛʜɪs ᴍᴇssᴀɢᴇ ᴡɪʟʟ ʙᴇ ᴅᴇʟᴇᴛᴇᴅ ɪɴ <b><u>10 mins</u> 🫥 <i></b>(ᴅᴜᴇ ᴛᴏ ᴄᴏᴘʏʀɪɢʜᴛ ɪssᴜᴇs)</i>.\n\n<b><i>ᴘʟᴇᴀsᴇ ғᴏʀᴡᴀʀᴅ ᴛʜɪs ᴍᴇssᴀɢᴇ ᴛᴏ ʏᴏᴜʀ sᴀᴠᴇᴅ ᴍᴇssᴀɢᴇs ᴏʀ ᴀɴʏ ᴘʀɪᴠᴀᴛᴇ ᴄʜᴀᴛ.</i></b></blockquote>")
         if CUSTOM_MSG:
             try:
                 await k.reply(CUSTOM_MSG)
@@ -280,10 +296,13 @@ async def start(client, message):
                 print(e)
         await asyncio.sleep(600)
         for x in filesarr:
-            await x.delete()
-        await k.edit_text("<b>✅ ʏᴏᴜʀ ᴍᴇssᴀɢᴇ ɪs sᴜᴄᴄᴇssғᴜʟʟʏ ᴅᴇʟᴇᴛᴇᴅ</b>")  
+            try:
+                await x.delete()
+            except Exception:
+                pass
+        await k.edit_text("<b>✅ ʏᴏᴜʀ ᴍᴇssᴀɢᴇ ɪs sᴜᴄᴄᴇssғᴜʟʟʏ ᴅᴇʟᴇᴛᴇᴅ</b>")
         return
-    
+
     elif data.split("-", 1)[0] == "DSTORE":
         sts = await message.reply("<b>ᴘʟᴇᴀsᴇ ᴡᴀɪᴛ...</b>")
         b_string = data.split("-", 1)[1]
